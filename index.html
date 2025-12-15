@@ -3,89 +3,56 @@
 <head>
 <meta charset="UTF-8">
 <title>Pac-Man Web</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <style>
-  :root { --control-size: 64px; }
   body {
     margin: 0;
     background: black;
     touch-action: none;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    box-sizing: border-box;
+    color: white;
+    font-family: sans-serif;
   }
-  #wrap {
-    position: relative;
-    max-width: 100%;
-    max-height: 100%;
+  .topbar {
+    text-align: center;
+    margin: 8px 0;
   }
   canvas {
     display: block;
+    margin: auto;
     background: black;
-    image-rendering: pixelated;
-    width: 100%;
-    height: auto;
-    touch-action: none;
   }
-  /* on-screen controls */
-  #controls {
-    position: fixed;
-    left: 50%;
-    bottom: 12px;
-    transform: translateX(-50%);
-    display: grid;
-    grid-template-columns: var(--control-size) var(--control-size) var(--control-size);
-    grid-template-rows: var(--control-size) var(--control-size);
-    gap: 8px;
-    align-items: center;
-    justify-items: center;
-    pointer-events: none; /* allow canvas gestures unless on buttons */
+  .controls {
+    text-align: center;
+    margin-bottom: 8px;
   }
-  .btn {
-    width: var(--control-size);
-    height: var(--control-size);
-    border-radius: 50%;
-    background: rgba(255,255,255,0.08);
+  .info {
     color: white;
-    font-size: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: auto;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
+    text-align: center;
+    font-family: sans-serif;
+    margin-top: 8px;
   }
-  .btn:active { background: rgba(255,255,255,0.18); }
-  /* place buttons visually:  . empty  up  .  left right  down */
-  .spacer { width: var(--control-size); height: var(--control-size); }
-  @media (min-width: 420px) {
-    :root { --control-size: 72px; }
-  }
+  .btn { padding: 6px 10px; }
+  select, input[type=range], input[type=number] { vertical-align: middle; }
 </style>
 </head>
 <body>
 
-<div id="wrap">
-  <canvas id="game"></canvas>
+<div class="topbar">
+  <h2>Pac-Man Web</h2>
 </div>
 
-<div id="controls" aria-hidden="true">
-  <div class="spacer"></div>
-  <button class="btn" data-dir="0,-1">▲</button>
-  <div class="spacer"></div>
-  <button class="btn" data-dir="-1,0">◀</button>
-  <button class="btn" data-dir="1,0">▶</button>
-  <button class="btn" data-dir="0,1">▼</button>
+<div class="controls">
+  Ghosts: <input id="ghostCount" type="number" min="1" max="6" value="3" style="width:56px"> 
+  Speed: <input id="ghostSpeed" type="range" min="150" max="1000" step="50" value="450"> <span id="speedVal">450</span>ms
+  AI: <select id="ghostAI"><option value="random">random</option><option value="chase">chase</option><option value="astar">astar</option></select>
+  <button id="apply" class="btn">Apply & Restart</button>
 </div>
+
+<canvas id="game"></canvas>
+<div class="info" id="info">Score: 0</div>
 
 <script>
-let tileSize = 20; // will be recalculated
-const map = [
+const tileSize = 20;
+const mapTemplate = [
   "###############",
   "#.............#",
   "#.###.###.###.#",
@@ -95,46 +62,47 @@ const map = [
   "###############"
 ];
 
-const cols = map[0].length;
-const rows = map.length;
+let map = mapTemplate.slice();
 
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const infoEl = document.getElementById('info');
+const ghostCountEl = document.getElementById('ghostCount');
+const ghostSpeedEl = document.getElementById('ghostSpeed');
+const speedValEl = document.getElementById('speedVal');
+const ghostAIEl = document.getElementById('ghostAI');
+const applyBtn = document.getElementById('apply');
 
-// size canvas based on available viewport so it fits nicely on smartphones
-function resizeCanvas() {
-  // leave some room for on-screen controls (approx 120px)
-  const availW = window.innerWidth - 16; // padding
-  const availH = window.innerHeight - 140; // reserve space for controls / safe area
-  // compute max integer tile size that fits both directions
-  const size = Math.max(8, Math.floor(Math.min(availW / cols, availH / rows)));
-  tileSize = size;
-  canvas.width = tileSize * cols;
-  canvas.height = tileSize * rows;
-  // set CSS size so it scales responsively while keeping integer tile size
-  canvas.style.width = canvas.width + 'px';
-  canvas.style.height = canvas.height + 'px';
-  draw();
+// size canvas to the map
+canvas.width = tileSize * map[0].length;
+canvas.height = tileSize * map.length;
+
+let score = 0;
+function updateInfo() {
+  infoEl.textContent = `Score: ${score}`;
 }
 
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
-
 let player = { x: 1, y: 1 };
+let ghosts = [];
+let ghostTimer = null;
 
-function replaceAt(str, idx, ch) {
-  return str.substr(0, idx) + ch + str.substr(idx + 1);
+// spawn points for ghosts
+const spawnPoints = [ {x:13,y:1}, {x:13,y:5}, {x:1,y:5}, {x:7,y:3}, {x:2,y:1}, {x:11,y:3} ];
+
+function resetMap() {
+  map = mapTemplate.slice();
 }
 
 function setTile(x, y, ch) {
-  map[y] = replaceAt(map[y], x, ch);
+  const row = map[y];
+  map[y] = row.substr(0, x) + ch + row.substr(x + 1);
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
+  for (let y = 0; y < map.length; y++) {
+    for (let x = 0; x < map[y].length; x++) {
       const tile = map[y][x];
       const cx = x * tileSize + tileSize / 2;
       const cy = y * tileSize + tileSize / 2;
@@ -143,94 +111,276 @@ function draw() {
         ctx.fillStyle = 'blue';
         ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
       } else if (tile === '.') {
+        // pellet
         ctx.fillStyle = 'white';
         ctx.beginPath();
-        ctx.arc(cx, cy, Math.max(2, tileSize * 0.12), 0, Math.PI * 2);
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  // draw player once (simple mouth)
+  // draw player once (simple open-mouth)
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
   const px = player.x * tileSize + tileSize / 2;
   const py = player.y * tileSize + tileSize / 2;
-  const radius = Math.max(8, tileSize / 2 - 2);
   ctx.moveTo(px, py);
-  ctx.arc(px, py, radius, 0.25 * Math.PI, 1.75 * Math.PI);
+  ctx.arc(px, py, tileSize / 2 - 2, 0.25 * Math.PI, 1.75 * Math.PI);
   ctx.closePath();
   ctx.fill();
+
+  // draw ghosts
+  for (const g of ghosts) {
+    const gx = g.x * tileSize + tileSize / 2;
+    const gy = g.y * tileSize + tileSize / 2;
+    ctx.fillStyle = g.color;
+    ctx.beginPath();
+    ctx.arc(gx, gy - 2, tileSize / 2 - 2, Math.PI, 0);
+    ctx.rect(gx - (tileSize / 2 - 2), gy - 2, (tileSize - 4), (tileSize / 2));
+    ctx.fill();
+    // eyes
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(gx - 5, gy - 2, 3, 0, Math.PI * 2);
+    ctx.arc(gx + 4, gy - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(gx - 4, gy - 2, 1.5, 0, Math.PI * 2);
+    ctx.arc(gx + 5, gy - 2, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function canMove(nx, ny) {
-  if (ny < 0 || ny >= rows) return false;
-  if (nx < 0 || nx >= cols) return false;
+  if (ny < 0 || ny >= map.length) return false;
+  if (nx < 0 || nx >= map[0].length) return false;
   return map[ny][nx] !== '#';
 }
 
-function move(dx, dy) {
+function movePlayer(dx, dy) {
   const nx = player.x + dx;
   const ny = player.y + dy;
   if (!canMove(nx, ny)) return;
-  if (map[ny][nx] === '.') setTile(nx, ny, ' ');
+
+  // eat pellet if present
+  if (map[ny][nx] === '.') {
+    setTile(nx, ny, ' ');
+    score += 10;
+    updateInfo();
+  }
+
   player.x = nx;
   player.y = ny;
   draw();
+  checkCollision();
 }
 
-// keyboard controls
 document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowUp') move(0, -1);
-  if (e.key === 'ArrowDown') move(0, 1);
-  if (e.key === 'ArrowLeft') move(-1, 0);
-  if (e.key === 'ArrowRight') move(1, 0);
+  if (e.key === 'ArrowUp') movePlayer(0, -1);
+  if (e.key === 'ArrowDown') movePlayer(0, 1);
+  if (e.key === 'ArrowLeft') movePlayer(-1, 0);
+  if (e.key === 'ArrowRight') movePlayer(1, 0);
 });
 
-// touch swipe controls (for swiping the canvas)
-let startX = 0, startY = 0;
+let startX = 0;
+let startY = 0;
+
 canvas.addEventListener('touchstart', e => {
   const t = e.touches[0];
   startX = t.clientX;
   startY = t.clientY;
 });
+
 canvas.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   const dx = t.clientX - startX;
   const dy = t.clientY - startY;
+
   if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 30) move(1, 0);
-    if (dx < -30) move(-1, 0);
+    if (dx > 20) movePlayer(1, 0);
+    if (dx < -20) movePlayer(-1, 0);
   } else {
-    if (dy > 30) move(0, 1);
-    if (dy < -30) move(0, -1);
+    if (dy > 20) movePlayer(0, 1);
+    if (dy < -20) movePlayer(0, -1);
   }
 });
 
-// on-screen buttons: support hold for repeated moves
-let repeatInterval = null;
-function startRepeat(dx, dy) {
-  move(dx, dy);
-  repeatInterval = setInterval(() => move(dx, dy), 150);
-}
-function stopRepeat() {
-  if (repeatInterval) { clearInterval(repeatInterval); repeatInterval = null; }
+// ghost helpers
+function availableDirs(x, y) {
+  const dirs = [];
+  if (canMove(x + 1, y)) dirs.push([1, 0]);
+  if (canMove(x - 1, y)) dirs.push([-1, 0]);
+  if (canMove(x, y + 1)) dirs.push([0, 1]);
+  if (canMove(x, y - 1)) dirs.push([0, -1]);
+  return dirs;
 }
 
-const buttons = document.querySelectorAll('#controls .btn');
-buttons.forEach(btn => {
-  const [dx, dy] = btn.dataset.dir.split(',').map(Number);
-  // touch
-  btn.addEventListener('touchstart', e => { e.preventDefault(); startRepeat(dx, dy); });
-  btn.addEventListener('touchend', e => { e.preventDefault(); stopRepeat(); });
-  // mouse
-  btn.addEventListener('mousedown', e => { e.preventDefault(); startRepeat(dx, dy); });
-  window.addEventListener('mouseup', stopRepeat);
+function chooseGhostDirectionGreedy(g) {
+  const dx = player.x - g.x;
+  const dy = player.y - g.y;
+  const dirs = [];
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    dirs.push([Math.sign(dx), 0]);
+    dirs.push([0, Math.sign(dy)]);
+  } else {
+    dirs.push([0, Math.sign(dy)]);
+    dirs.push([Math.sign(dx), 0]);
+  }
+
+  dirs.push([1,0], [-1,0], [0,1], [0,-1]);
+
+  for (const d of dirs) {
+    const nx = g.x + d[0], ny = g.y + d[1];
+    if (canMove(nx, ny)) return d;
+  }
+  return [0,0];
+}
+
+// A* implementation to compute next step; heuristic: Manhattan distance
+function findNextStepAStar(start, goal) {
+  const h = map.length, w = map[0].length;
+  function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+
+  // g score map
+  const gScore = Array.from({length: h}, () => Array(w).fill(Infinity));
+  gScore[start.y][start.x] = 0;
+
+  // cameFrom map
+  const cameFrom = Array.from({length: h}, () => Array(w).fill(null));
+
+  // open list (simple array; small grid so ok)
+  const open = [];
+  open.push({x: start.x, y: start.y, g: 0, f: heuristic(start, goal)});
+
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+  while (open.length > 0) {
+    // pop node with smallest f
+    open.sort((a,b) => a.f - b.f);
+    const current = open.shift();
+
+    if (current.x === goal.x && current.y === goal.y) break;
+
+    for (const d of dirs) {
+      const nx = current.x + d[0], ny = current.y + d[1];
+      if (nx < 0 || ny < 0 || ny >= h || nx >= w) continue;
+      if (!canMove(nx, ny)) continue;
+      const tentativeG = current.g + 1;
+      if (tentativeG < gScore[ny][nx]) {
+        cameFrom[ny][nx] = {x: current.x, y: current.y};
+        gScore[ny][nx] = tentativeG;
+        const f = tentativeG + heuristic({x: nx, y: ny}, goal);
+        open.push({x: nx, y: ny, g: tentativeG, f});
+      }
+    }
+  }
+
+  if (!cameFrom[goal.y][goal.x]) {
+    // no path found
+    return null;
+  }
+
+  // reconstruct path: walk back from goal to the tile directly after start
+  let cur = {x: goal.x, y: goal.y};
+  let prev = cameFrom[cur.y][cur.x];
+  while (prev && !(prev.x === start.x && prev.y === start.y)) {
+    cur = prev;
+    prev = cameFrom[cur.y][cur.x];
+  }
+  // cur is the tile to step into from start
+  return {dx: cur.x - start.x, dy: cur.y - start.y};
+}
+
+function moveGhosts(mode) {
+  for (const g of ghosts) {
+    const dirs = availableDirs(g.x, g.y);
+    if (dirs.length === 0) continue;
+
+    let dirToUse = [0,0];
+    if (mode === 'random') {
+      dirToUse = dirs[Math.floor(Math.random() * dirs.length)];
+    } else if (mode === 'chase') {
+      const pref = chooseGhostDirectionGreedy(g);
+      const nx = g.x + pref[0], ny = g.y + pref[1];
+      if (canMove(nx, ny)) dirToUse = pref;
+      else dirToUse = dirs[Math.floor(Math.random() * dirs.length)];
+    } else if (mode === 'astar') {
+      const step = findNextStepAStar({x: g.x, y: g.y}, {x: player.x, y: player.y});
+      if (step) dirToUse = [Math.sign(step.dx), Math.sign(step.dy)];
+      else dirToUse = dirs[Math.floor(Math.random() * dirs.length)];
+    }
+
+    g.x += dirToUse[0];
+    g.y += dirToUse[1];
+  }
+
+  draw();
+  checkCollision();
+}
+
+function checkCollision() {
+  for (const g of ghosts) {
+    if (g.x === player.x && g.y === player.y) {
+      gameOver();
+      return;
+    }
+  }
+}
+
+function gameOver() {
+  clearInterval(ghostTimer);
+  setTimeout(() => {
+    alert('Game Over! Score: ' + score);
+    initGame();
+  }, 50);
+}
+
+function initGhosts(count, mode) {
+  ghosts = [];
+  for (let i = 0; i < count; i++) {
+    const p = spawnPoints[i % spawnPoints.length];
+    const colors = ['red','pink','cyan','orange','lime','magenta'];
+    ghosts.push({ x: p.x, y: p.y, color: colors[i % colors.length] });
+  }
+  // clear existing timer
+  if (ghostTimer) clearInterval(ghostTimer);
+  const speed = parseInt(ghostSpeedEl.value, 10);
+  ghostTimer = setInterval(() => moveGhosts(mode), speed);
+}
+
+function initGame() {
+  // reset map and player
+  resetMap();
+  score = 0;
+  updateInfo();
+  player = { x: 1, y: 1 };
+  draw();
+  // init ghosts from controls
+  const count = Math.max(1, Math.min(6, parseInt(ghostCountEl.value,10) || 3));
+  const mode = ghostAIEl.value;
+  initGhosts(count, mode);
+}
+
+applyBtn.addEventListener('click', () => {
+  // restart with new settings
+  if (ghostTimer) clearInterval(ghostTimer);
+  // update displayed speed
+  speedValEl.textContent = ghostSpeedEl.value;
+  initGame();
 });
 
-// initial sizing and draw
-resizeCanvas();
+ghostSpeedEl.addEventListener('input', () => {
+  speedValEl.textContent = ghostSpeedEl.value;
+});
 
+// initial start
+updateInfo();
+initGame();
+
+draw();
 </script>
 
 </body>
