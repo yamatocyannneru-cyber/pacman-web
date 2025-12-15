@@ -18,92 +18,118 @@
 </head>
 <body>
 
-<canvas id="game" width="300" height="300"></canvas>
+<canvas id="game"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-
 const tileSize = 20;
 const map = [
   "###############",
   "#.............#",
-  "#.###.###.###..#",
+  "#.###.###.###.#",
   "#.............#",
-  "#.###.#.#.###..#",
+  "#.###.#.#.###.#",
   "#.....#.#.....#",
   "###############"
 ];
 
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+// size canvas to the map
+canvas.width = tileSize * map[0].length;
+canvas.height = tileSize * map.length;
+
 let player = { x: 1, y: 1 };
 
+function setTile(x, y, ch) {
+  const row = map[y];
+  map[y] = row.substr(0, x) + ch + row.substr(x + 1);
+}
+
 function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (let y = 0; y < map.length; y++) {
     for (let x = 0; x < map[y].length; x++) {
-      if (map[y][x] === "#") {
-        ctx.fillStyle = "blue";
-        ctx.fillRect(x*tileSize, y*tileSize, tileSize, tileSize);
-      } else {
-        ctx.fillStyle = "yellow";
+      const tile = map[y][x];
+      const cx = x * tileSize + tileSize / 2;
+      const cy = y * tileSize + tileSize / 2;
+
+      if (tile === '#') {
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+      } else if (tile === '.') {
+        // pellet
+        ctx.fillStyle = 'white';
         ctx.beginPath();
-        ctx.arc(
-          player.x*tileSize + tileSize/2,
-          player.y*tileSize + tileSize/2,
-          tileSize/2 - 2,
-          0,
-          Math.PI * 2
-        );
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
+
+  // draw player once
+  ctx.fillStyle = 'yellow';
+  ctx.beginPath();
+  // simple open-mouth effect
+  const px = player.x * tileSize + tileSize / 2;
+  const py = player.y * tileSize + tileSize / 2;
+  ctx.moveTo(px, py);
+  ctx.arc(px, py, tileSize / 2 - 2, 0.25 * Math.PI, 1.75 * Math.PI);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function canMove(nx, ny) {
+  if (ny < 0 || ny >= map.length) return false;
+  if (nx < 0 || nx >= map[0].length) return false;
+  return map[ny][nx] !== '#';
 }
 
 function move(dx, dy) {
   const nx = player.x + dx;
   const ny = player.y + dy;
-  if (map[ny][nx] !== "#") {
-    player.x = nx;
-    player.y = ny;
-  }
+  if (!canMove(nx, ny)) return;
+
+  // eat pellet if present
+  if (map[ny][nx] === '.') setTile(nx, ny, ' ');
+
+  player.x = nx;
+  player.y = ny;
   draw();
 }
 
-document.addEventListener("keydown", e => {
-  if (e.key === "ArrowUp") move(0,-1);
-  if (e.key === "ArrowDown") move(0,1);
-  if (e.key === "ArrowLeft") move(-1,0);
-  if (e.key === "ArrowRight") move(1,0);
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') move(0, -1);
+  if (e.key === 'ArrowDown') move(0, 1);
+  if (e.key === 'ArrowLeft') move(-1, 0);
+  if (e.key === 'ArrowRight') move(1, 0);
 });
 
 let startX = 0;
 let startY = 0;
 
-canvas.addEventListener("touchstart", e => {
+canvas.addEventListener('touchstart', e => {
   const t = e.touches[0];
   startX = t.clientX;
   startY = t.clientY;
 });
 
-canvas.addEventListener("touchend", e => {
+canvas.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   const dx = t.clientX - startX;
   const dy = t.clientY - startY;
 
   if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 20) move(1,0);
-    if (dx < -20) move(-1,0);
+    if (dx > 20) move(1, 0);
+    if (dx < -20) move(-1, 0);
   } else {
-    if (dy > 20) move(0,1);
-    if (dy < -20) move(0,-1);
+    if (dy > 20) move(0, 1);
+    if (dy < -20) move(0, -1);
   }
 });
 
-
-
-
+// initial draw
 draw();
 </script>
 
