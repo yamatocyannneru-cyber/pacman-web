@@ -3,25 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <title>Pac-Man Web</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <style>
+  :root { --control-size: 64px; }
   body {
     margin: 0;
     background: black;
     touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    box-sizing: border-box;
+  }
+  #wrap {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
   }
   canvas {
     display: block;
-    margin: auto;
     background: black;
+    image-rendering: pixelated;
+    width: 100%;
+    height: auto;
+    touch-action: none;
+  }
+  /* on-screen controls */
+  #controls {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: var(--control-size) var(--control-size) var(--control-size);
+    grid-template-rows: var(--control-size) var(--control-size);
+    gap: 8px;
+    align-items: center;
+    justify-items: center;
+    pointer-events: none; /* allow canvas gestures unless on buttons */
+  }
+  .btn {
+    width: var(--control-size);
+    height: var(--control-size);
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    color: white;
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .btn:active { background: rgba(255,255,255,0.18); }
+  /* place buttons visually:  . empty  up  .  left right  down */
+  .spacer { width: var(--control-size); height: var(--control-size); }
+  @media (min-width: 420px) {
+    :root { --control-size: 72px; }
   }
 </style>
 </head>
 <body>
 
-<canvas id="game"></canvas>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+
+<div id="controls" aria-hidden="true">
+  <div class="spacer"></div>
+  <button class="btn" data-dir="0,-1">▲</button>
+  <div class="spacer"></div>
+  <button class="btn" data-dir="-1,0">◀</button>
+  <button class="btn" data-dir="1,0">▶</button>
+  <button class="btn" data-dir="0,1">▼</button>
+</div>
 
 <script>
-const tileSize = 20;
+let tileSize = 20; // will be recalculated
 const map = [
   "###############",
   "#.............#",
@@ -32,25 +95,46 @@ const map = [
   "###############"
 ];
 
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const cols = map[0].length;
+const rows = map.length;
 
-// size canvas to the map
-canvas.width = tileSize * map[0].length;
-canvas.height = tileSize * map.length;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// size canvas based on available viewport so it fits nicely on smartphones
+function resizeCanvas() {
+  // leave some room for on-screen controls (approx 120px)
+  const availW = window.innerWidth - 16; // padding
+  const availH = window.innerHeight - 140; // reserve space for controls / safe area
+  // compute max integer tile size that fits both directions
+  const size = Math.max(8, Math.floor(Math.min(availW / cols, availH / rows)));
+  tileSize = size;
+  canvas.width = tileSize * cols;
+  canvas.height = tileSize * rows;
+  // set CSS size so it scales responsively while keeping integer tile size
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+  draw();
+}
+
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
 
 let player = { x: 1, y: 1 };
 
+function replaceAt(str, idx, ch) {
+  return str.substr(0, idx) + ch + str.substr(idx + 1);
+}
+
 function setTile(x, y, ch) {
-  const row = map[y];
-  map[y] = row.substr(0, x) + ch + row.substr(x + 1);
+  map[y] = replaceAt(map[y], x, ch);
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (let y = 0; y < map.length; y++) {
-    for (let x = 0; x < map[y].length; x++) {
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
       const tile = map[y][x];
       const cx = x * tileSize + tileSize / 2;
       const cy = y * tileSize + tileSize / 2;
@@ -59,30 +143,29 @@ function draw() {
         ctx.fillStyle = 'blue';
         ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
       } else if (tile === '.') {
-        // pellet
         ctx.fillStyle = 'white';
         ctx.beginPath();
-        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+        ctx.arc(cx, cy, Math.max(2, tileSize * 0.12), 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  // draw player once
+  // draw player once (simple mouth)
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
-  // simple open-mouth effect
   const px = player.x * tileSize + tileSize / 2;
   const py = player.y * tileSize + tileSize / 2;
+  const radius = Math.max(8, tileSize / 2 - 2);
   ctx.moveTo(px, py);
-  ctx.arc(px, py, tileSize / 2 - 2, 0.25 * Math.PI, 1.75 * Math.PI);
+  ctx.arc(px, py, radius, 0.25 * Math.PI, 1.75 * Math.PI);
   ctx.closePath();
   ctx.fill();
 }
 
 function canMove(nx, ny) {
-  if (ny < 0 || ny >= map.length) return false;
-  if (nx < 0 || nx >= map[0].length) return false;
+  if (ny < 0 || ny >= rows) return false;
+  if (nx < 0 || nx >= cols) return false;
   return map[ny][nx] !== '#';
 }
 
@@ -90,15 +173,13 @@ function move(dx, dy) {
   const nx = player.x + dx;
   const ny = player.y + dy;
   if (!canMove(nx, ny)) return;
-
-  // eat pellet if present
   if (map[ny][nx] === '.') setTile(nx, ny, ' ');
-
   player.x = nx;
   player.y = ny;
   draw();
 }
 
+// keyboard controls
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowUp') move(0, -1);
   if (e.key === 'ArrowDown') move(0, 1);
@@ -106,31 +187,50 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') move(1, 0);
 });
 
-let startX = 0;
-let startY = 0;
-
+// touch swipe controls (for swiping the canvas)
+let startX = 0, startY = 0;
 canvas.addEventListener('touchstart', e => {
   const t = e.touches[0];
   startX = t.clientX;
   startY = t.clientY;
 });
-
 canvas.addEventListener('touchend', e => {
   const t = e.changedTouches[0];
   const dx = t.clientX - startX;
   const dy = t.clientY - startY;
-
   if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 20) move(1, 0);
-    if (dx < -20) move(-1, 0);
+    if (dx > 30) move(1, 0);
+    if (dx < -30) move(-1, 0);
   } else {
-    if (dy > 20) move(0, 1);
-    if (dy < -20) move(0, -1);
+    if (dy > 30) move(0, 1);
+    if (dy < -30) move(0, -1);
   }
 });
 
-// initial draw
-draw();
+// on-screen buttons: support hold for repeated moves
+let repeatInterval = null;
+function startRepeat(dx, dy) {
+  move(dx, dy);
+  repeatInterval = setInterval(() => move(dx, dy), 150);
+}
+function stopRepeat() {
+  if (repeatInterval) { clearInterval(repeatInterval); repeatInterval = null; }
+}
+
+const buttons = document.querySelectorAll('#controls .btn');
+buttons.forEach(btn => {
+  const [dx, dy] = btn.dataset.dir.split(',').map(Number);
+  // touch
+  btn.addEventListener('touchstart', e => { e.preventDefault(); startRepeat(dx, dy); });
+  btn.addEventListener('touchend', e => { e.preventDefault(); stopRepeat(); });
+  // mouse
+  btn.addEventListener('mousedown', e => { e.preventDefault(); startRepeat(dx, dy); });
+  window.addEventListener('mouseup', stopRepeat);
+});
+
+// initial sizing and draw
+resizeCanvas();
+
 </script>
 
 </body>
