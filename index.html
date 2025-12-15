@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Pac-Man Web</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    background: black;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="300" height="300"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const tileSize = 20;
+const map = [
+  "###############",
+  "#.............#",
+  "#.###.###.###..#",
+  "#.............#",
+  "#.###.#.#.###..#",
+  "#.....#.#.....#",
+  "###############"
+];
+
+let player = { x: 1, y: 1 };
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  for (let y = 0; y < map.length; y++) {
+    for (let x = 0; x < map[y].length; x++) {
+      if (map[y][x] === "#") {
+        ctx.fillStyle = "blue";
+        ctx.fillRect(x*tileSize, y*tileSize, tileSize, tileSize);
+      } else {
+        ctx.fillStyle = "yellow";
+        ctx.beginPath();
+        ctx.arc(
+          player.x*tileSize + tileSize/2,
+          player.y*tileSize + tileSize/2,
+          tileSize/2 - 2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+    }
+  }
+}
+
+function move(dx, dy) {
+  const nx = player.x + dx;
+  const ny = player.y + dy;
+  if (map[ny][nx] !== "#") {
+    player.x = nx;
+    player.y = ny;
+  }
+  draw();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowUp") move(0,-1);
+  if (e.key === "ArrowDown") move(0,1);
+  if (e.key === "ArrowLeft") move(-1,0);
+  if (e.key === "ArrowRight") move(1,0);
+});
+
+let startX = 0;
+let startY = 0;
+
+canvas.addEventListener("touchstart", e => {
+  const t = e.touches[0];
+  startX = t.clientX;
+  startY = t.clientY;
+});
+
+canvas.addEventListener("touchend", e => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - startX;
+  const dy = t.clientY - startY;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 20) move(1,0);
+    if (dx < -20) move(-1,0);
+  } else {
+    if (dy > 20) move(0,1);
+    if (dy < -20) move(0,-1);
+  }
+});
+
+
+
+
+draw();
+</script>
+
+</body>
+</html>
